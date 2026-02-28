@@ -1,4 +1,4 @@
-add_library(libvdb libvdb.cpp)
+add_library(libvdb process.cpp)
 add_library(vdb::libvdb ALIAS libvdb)
 
 set_target_properties(
