@@ -1,5 +1,5 @@
 #ifndef VDB_PROCESS_HPP
-#define SDB_PROCESS_HPP
+#define VDB_PROCESS_HPP
 
 #include <filesystem>
 #include <memory>

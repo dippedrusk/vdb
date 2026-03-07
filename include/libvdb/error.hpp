@@ -1,5 +1,5 @@
 #ifndef VDB_ERROR_HPP
-#define SDB_ERROR_HPP
+#define VDB_ERROR_HPP
 
 #include <stdexcept>
 #include <cstring>
