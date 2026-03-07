@@ -1,5 +1,7 @@
 # VDB
 
+Debugger I'm building by following [Sy Brand](https://github.com/TartanLlama)'s book [Building a Debugger](https://nostarch.com/building-a-debugger).
+
 ## Dependencies
 Run this outside this repo:
 
@@ -29,4 +31,10 @@ From the `build/` subdirectory, run
 From the `build/tests` subdirectory, run
 ```
 ./tests
+```
+
+## Helpful aliases
+For people like me who obstinately refuse to use anything but vim, add this to your `~/.bashrc` or equivalent
+```
+alias btvdb="pushd ~/vdb/build; cmake --build . && cd test/ && ./tests; popd;"
 ```
