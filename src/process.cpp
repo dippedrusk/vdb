@@ -1,24 +1,52 @@
 #include <libvdb/process.hpp>
 #include <libvdb/error.hpp>
+#include <libvdb/pipe.hpp>
 #include <sys/ptrace.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+namespace {
+	void exit_with_perror(
+			vdb::pipe& channel, std::string const& prefix) {
+		auto message = prefix + ": " + std::strerror(errno);
+		channel.write(
+				reinterpret_cast<std::byte*>(message.data()), message.size());
+		exit(-1);
+	}
+}
+
 std::unique_ptr<vdb::process> vdb::process::launch(
 		std::filesystem::path path) {
+	// gotta do this before forking,
+	// otherwise the child and parent have their own (different) pipes
+	pipe channel(/*close_on_exec=*/true);
+
 	pid_t pid = 0;
 	if ((pid = fork()) < 0) {
 		error::send_errno("fork failed");
 	}
 
 	if (pid == 0) {
+		// the child just writes and doesn't read
+		channel.close_read();
 		if (ptrace(PTRACE_TRACEME, 0, nullptr, nullptr) < 0) {
-			error::send_errno("Tracing failed");
+			exit_with_perror(channel, "Tracing failed");
 		}
 		if (execlp(path.c_str(), path.c_str(), nullptr) < 0) {
-			error::send_errno("Exec failed");
+			exit_with_perror(channel, "Exec failed");
 		}
+	}
+
+	// the parent just reads and doesn't write
+	channel.close_write();
+	auto data = channel.read();
+	channel.close_read();
+
+	if (data.size() > 0) {
+		waitpid(pid, nullptr, 0);
+		auto chars = reinterpret_cast<char*>(data.data());
+		error::send(std::string(chars, chars + data.size()));
 	}
 
 	std::unique_ptr<process> proc (new process(pid, /*terminate_on_end=*/true));
