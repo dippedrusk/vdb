@@ -19,8 +19,14 @@ cmake --build .
 
 Change path to vcpkg as needed.
 
-## Running
+## Running the debugger
 From the `build/` subdirectory, run
 ```
-tools/vdb
+./tools/vdb
+```
+
+## Running tests
+From the `build/tests` subdirectory, run
+```
+./tests
 ```
