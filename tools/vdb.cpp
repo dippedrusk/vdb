@@ -13,6 +13,7 @@
 #include <sstream>
 #include <fmt/format.h>
 #include <fmt/ranges.h>
+#include <libvdb/parse.hpp>
 
 namespace {
 	std::unique_ptr<vdb::process> attach(int argc, const char** argv) {
@@ -128,6 +129,52 @@ namespace {
 		}
 	}
 
+	vdb::registers::value parse_register_value(vdb::register_info info,
+			std::string_view text) {
+		try {
+			if (info.format == vdb::register_format::uint) {
+				switch (info.size) {
+					case 1: return vdb::to_integral<std::uint8_t>(text, 16).value();
+					case 2: return vdb::to_integral<std::uint16_t>(text, 16).value();
+					case 4: return vdb::to_integral<std::uint32_t>(text, 16).value();
+					case 8: return vdb::to_integral<std::uint64_t>(text, 16).value();
+				}
+			}
+			else if (info.format == vdb::register_format::double_float) {
+				return vdb::to_float<double>(text).value();
+			}
+			else if (info.format == vdb::register_format::long_double) {
+				return vdb::to_float<long double>(text).value();
+			}
+			else if (info.format == vdb::register_format::vector) {
+				if (info.size == 8) {
+					return vdb::parse_vector<8>(text);
+				}
+				else if (info.size == 16) {
+					return vdb::parse_vector<16>(text);
+				}
+			}
+		}
+		catch (...) {}
+		vdb::error::send("Invalid format");
+	}
+
+	void handle_register_write(vdb::process& process, const std::vector<std::string>& args) {
+		if (args.size() != 4) {
+			print_help({ "help", "register" });
+			return;
+		}
+		try {
+			auto info = vdb::register_info_by_name(args[2]);
+			auto value = parse_register_value(info, args[3]);
+			process.get_registers().write(info, value);
+		}
+		catch (vdb::error& err) {
+			std::cerr << err.what() << '\n';
+			return;
+		}
+	}
+
 	void handle_register_command(vdb::process& process, const std::vector<std::string>& args) {
 		if (args.size() < 2) {
 			print_help({ "help", "register" });
@@ -138,7 +185,7 @@ namespace {
 			handle_register_read(process, args);
 		}
 		else if (is_prefix(args[1], "write")) {
-			/* TODO handle write */
+			handle_register_write(process, args);
 		}
 		else {
 			print_help({ "help", "register" });
