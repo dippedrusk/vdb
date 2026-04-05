@@ -3,6 +3,7 @@
 .section .data
 
 hex_format: .asciz "%#x"
+float_format: .asciz "%.3f"
 
 .section .text
 
@@ -37,6 +38,15 @@ main:
 	movq %mm0, %rsi
 	leaq hex_format(%rip), %rdi
 	movq $0, %rax
+	call printf@plt
+	movq $0, %rdi
+	call fflush@plt
+
+	trap
+
+	# Print what's in xmm0
+	leaq float_format(%rip), %rdi
+	movq $1, %rax
 	call printf@plt
 	movq $0, %rdi
 	call fflush@plt

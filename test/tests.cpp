@@ -98,4 +98,13 @@ TEST_CASE("Write register works", "[register]") {
 
 	output = channel.read();
 	REQUIRE(to_string_view(output) == "0xba5eba11");
+
+	/* xmm0 */
+	regs.write_by_id(register_id::xmm0, 131.719);
+
+	proc->resume();
+	proc->wait_on_signal();
+
+	output = channel.read();
+	REQUIRE(to_string_view(output) == "131.719");
 }
