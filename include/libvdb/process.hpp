@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <libvdb/registers.hpp>
 #include <optional>
+#include <libvdb/types.hpp>
 
 namespace vdb {
 	enum class process_state {
@@ -49,6 +50,12 @@ namespace vdb {
 			void write_gprs(const user_regs_struct& gprs);
 
 			void write_user_area(std::size_t offset, std::uint64_t data);
+
+			virt_addr get_pc() const {
+				return virt_addr{
+					get_registers().read_by_id_as<std::uint64_t>(register_id::rip)
+				};
+			}
 
 		private:
 			process(pid_t pid, bool terminate_on_end, bool is_attached)

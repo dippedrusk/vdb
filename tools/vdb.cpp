@@ -49,24 +49,24 @@ namespace {
 
 	void print_stop_reason(
 			const vdb::process& process, vdb::stop_reason reason) {
-		std::cout << "Process " << process.pid() << ' ';
-
+		std::string message;
 		switch (reason.reason) {
 			case vdb::process_state::exited:
-				std::cout << "exited with status "
-					<< static_cast<int>(reason.info);
+				message = fmt::format("exited with status {}",
+						static_cast<int>(reason.info));
 				break;
 			case vdb::process_state::terminated:
-				std::cout << "terminated with signal "
-					<< sigabbrev_np(reason.info);
+				message = fmt::format("terminated with signal {}",
+						sigabbrev_np(reason.info));
 				break;
 			case vdb::process_state::stopped:
-				std::cout << "stopped with signal "
-					<< sigabbrev_np(reason.info);
+				message = fmt::format("stopped with signal {} at {:#x}",
+						sigabbrev_np(reason.info),
+						process.get_pc().addr());
 				break;
 		}
 
-		std::cout << std::endl;
+		fmt::print("Process {} {}\n", process.pid(), message);
 	}
 
 	void print_help(const std::vector<std::string>& args) {
