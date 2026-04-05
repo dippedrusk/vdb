@@ -4,6 +4,7 @@
 
 hex_format: .asciz "%#x"
 float_format: .asciz "%.3f"
+long_float_format: .asciz "%.3Lf"
 
 .section .text
 
@@ -50,6 +51,18 @@ main:
 	call printf@plt
 	movq $0, %rdi
 	call fflush@plt
+
+	trap
+
+	# Print what's in st0
+	subq $16, %rsp
+	fstpt (%rsp)
+	leaq long_float_format(%rip), %rdi
+	movq $0, %rax
+	call printf@plt
+	movq $0, %rdi
+	call fflush@plt
+	addq $16, %rsp
 
 	trap
 
