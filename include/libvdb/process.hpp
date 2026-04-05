@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <cstdint>
 #include <libvdb/registers.hpp>
+#include <optional>
 
 namespace vdb {
 	enum class process_state {
@@ -24,7 +25,9 @@ namespace vdb {
 
 	class process {
 		public:
-			static std::unique_ptr<process> launch(std::filesystem::path path, bool debug = true);
+			static std::unique_ptr<process> launch(std::filesystem::path path,
+					bool debug = true,
+					std::optional<int> stdout_replacement = std::nullopt);
 			static std::unique_ptr<process> attach(pid_t pid);
 
 			void resume();
