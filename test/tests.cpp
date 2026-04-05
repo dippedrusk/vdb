@@ -80,6 +80,8 @@ TEST_CASE("Write register works", "[register]") {
 	proc->wait_on_signal();
 
 	auto& regs = proc->get_registers();
+
+	/* rsi */
 	regs.write_by_id(register_id::rsi, 0xcafebabe);
 
 	proc->resume();
@@ -87,4 +89,13 @@ TEST_CASE("Write register works", "[register]") {
 
 	auto output = channel.read();
 	REQUIRE(to_string_view(output) == "0xcafebabe");
+
+	/* mm0 */
+	regs.write_by_id(register_id::mm0, 0xba5eba11);
+
+	proc->resume();
+	proc->wait_on_signal();
+
+	output = channel.read();
+	REQUIRE(to_string_view(output) == "0xba5eba11");
 }
