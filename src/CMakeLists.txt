@@ -1,4 +1,4 @@
-add_library(libvdb process.cpp pipe.cpp registers.cpp)
+add_library(libvdb process.cpp pipe.cpp registers.cpp breakpoint_site.cpp)
 add_library(vdb::libvdb ALIAS libvdb)
 
 set_target_properties(

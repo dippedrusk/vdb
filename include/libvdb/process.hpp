@@ -8,6 +8,9 @@
 #include <libvdb/registers.hpp>
 #include <optional>
 #include <libvdb/types.hpp>
+#include <vector>
+#include <libvdb/breakpoint_site.hpp>
+#include <libvdb/stop_point_collection.hpp>
 
 namespace vdb {
 	enum class process_state {
@@ -57,6 +60,10 @@ namespace vdb {
 				};
 			}
 
+			breakpoint_site& create_breakpoint_site(virt_addr address);
+			stop_point_collection<breakpoint_site>& breakpoint_sites() { return breakpoint_sites_; }
+			const stop_point_collection<breakpoint_site>& breakpoint_sites() const { return breakpoint_sites_; }
+
 		private:
 			process(pid_t pid, bool terminate_on_end, bool is_attached)
 				: pid_(pid),
@@ -70,6 +77,7 @@ namespace vdb {
 			bool is_attached_ = true;
 			void read_all_registers();
 			std::unique_ptr<registers> registers_;
+			stop_point_collection<breakpoint_site> breakpoint_sites_;
 	};
 }
 
