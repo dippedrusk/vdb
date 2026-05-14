@@ -1,3 +1,4 @@
+#include <sys/personality.h>
 #include <libvdb/process.hpp>
 #include <libvdb/error.hpp>
 #include <libvdb/pipe.hpp>
@@ -30,6 +31,9 @@ std::unique_ptr<vdb::process> vdb::process::launch(
 	}
 
 	if (pid == 0) {
+		// disable address randomization for the child process
+		personality(ADDR_NO_RANDOMIZE);
+
 		// the child just writes and doesn't read
 		channel.close_read();
 		if (stdout_replacement) {
