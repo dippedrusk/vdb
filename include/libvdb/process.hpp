@@ -60,6 +60,10 @@ namespace vdb {
 				};
 			}
 
+			void set_pc(virt_addr address) {
+				get_registers().write_by_id(register_id::rip, address.addr());
+			}
+
 			breakpoint_site& create_breakpoint_site(virt_addr address);
 			stop_point_collection<breakpoint_site>& breakpoint_sites() { return breakpoint_sites_; }
 			const stop_point_collection<breakpoint_site>& breakpoint_sites() const { return breakpoint_sites_; }
