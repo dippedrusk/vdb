@@ -205,3 +205,24 @@ vdb::breakpoint_site& vdb::process::create_breakpoint_site(virt_addr address) {
 	return breakpoint_sites_.push(
 			std::unique_ptr<breakpoint_site>(new breakpoint_site(*this, address)));
 }
+
+vdb::stop_reason vdb::process::step_instruction() {
+	std::optional<breakpoint_site*> to_reenable;
+	auto pc = get_pc();
+	if (breakpoint_sites_.enabled_stop_point_at_address(pc)) {
+		auto& bp = breakpoint_sites_.get_by_address(pc);
+		bp.disable();
+		to_reenable = &bp;
+	}
+
+	if (ptrace(PTRACE_SINGLESTEP, pid_, nullptr, nullptr) < 0) {
+		error::send_errno("Could not single step");
+	}
+	auto reason = wait_on_signal();
+
+	if (to_reenable) {
+		to_reenable.value()->enable();
+	}
+
+	return reason;
+}
