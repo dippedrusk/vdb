@@ -20,6 +20,7 @@ namespace vdb {
 			const StopPoint& get_by_id(typename StopPoint::id_type id) const;
 			StopPoint& get_by_address(virt_addr address);
 			const StopPoint& get_by_address(virt_addr address) const;
+			std::vector<StopPoint*> get_in_region(virt_addr low, virt_addr high) const;
 
 			void remove_by_id(typename StopPoint::id_type id);
 			void remove_by_address(virt_addr address);
@@ -127,6 +128,17 @@ namespace vdb {
 		for (const auto& point : stop_points_) {
 			f(*point);
 		}
+	}
+
+	template <class StopPoint>std::vector<StopPoint*> stop_point_collection<StopPoint>::get_in_region(virt_addr low,
+			virt_addr high) const {
+		std::vector<StopPoint*> ret;
+		for (auto& site : stop_points_) {
+			if (site->in_range(low, high)) {
+				ret.push_back(&*site);
+			}
+		}
+		return ret;
 	}
 }
 

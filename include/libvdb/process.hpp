@@ -71,6 +71,7 @@ namespace vdb {
 			const stop_point_collection<breakpoint_site>& breakpoint_sites() const { return breakpoint_sites_; }
 
 			std::vector<std::byte> read_memory(virt_addr address, std::size_t amount) const;
+			std::vector<std::byte> read_memory_without_traps(virt_addr address, std::size_t amount) const;
 			void write_memory(virt_addr address, span<const std::byte> data);
 			template <class T> T read_memory_as(virt_addr address) const {
 				auto data = read_memory(address, sizeof(T));

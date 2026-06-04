@@ -1,5 +1,6 @@
 #include <libvdb/process.hpp>
 #include <libvdb/error.hpp>
+#include <libvdb/disassembler.hpp>
 #include <iostream>
 #include <unistd.h>
 #include <string_view>
@@ -76,6 +77,7 @@ namespace {
 			std::cerr << R"(Available commands:
 	breakpoint	- Commands for operating on breakpoints
 	continue	- Resume the process
+	disassemble	- Disassemble machine code to assembly
 	memory		- Commands for operating on memory
 	register	- Commands for operating on registers
 	step		- Step over a single instruction
@@ -103,6 +105,12 @@ namespace {
 	read <address>
 	read <address> <number of bytes>
 	write <address> <bytes>
+)";
+		}
+		else if (is_prefix(args[1], "disassemble")) {
+			std::cerr << R"(Available commands:
+	-c <number of instructions>
+	-a <start address>
 )";
 		}
 		else {
@@ -317,6 +325,48 @@ namespace {
 		}
 	}
 
+	void print_disassembly(vdb::process& process, vdb::virt_addr address, std::size_t n_instructions) {
+		vdb::disassembler dis(process);
+		auto instructions = dis.disassemble(n_instructions, address);
+		for (auto& instr : instructions) {
+			fmt::print("{:#018x}: {}\n", instr.address.addr(), instr.text);
+		}
+	}
+
+	void handle_stop(vdb::process& process, vdb::stop_reason reason) {
+		print_stop_reason(process, reason);
+		if (reason.reason == vdb::process_state::stopped) {
+			print_disassembly(process, process.get_pc(), 5);
+		}
+	}
+
+	void handle_disassemble_command(vdb::process& process, const std::vector<std::string>& args) {
+		auto address = process.get_pc();
+		std::size_t n_instructions = 5;
+
+		auto it = args.begin() + 1;
+		while (it != args.end()) {
+			if (*it == "-a" and it + 1 != args.end()) {
+				++it;
+				auto opt_addr = vdb::to_integral<std::uint64_t>(*it++, 16);
+				if (!opt_addr) vdb::error::send("Invalid address format");
+				address = vdb::virt_addr{ *opt_addr };
+			}
+			else if (*it == "-c" and it + 1 != args.end()) {
+				++it;
+				auto opt_n = vdb::to_integral<std::size_t>(*it++);
+				if (!opt_n) vdb::error::send("Invalid instruction count");
+				n_instructions = *opt_n;
+			}
+			else {
+				print_help({ "help", "disassemble" });
+				return;
+			}
+		}
+
+		print_disassembly(process, address, n_instructions);
+	}
+
 	void handle_command(
 			std::unique_ptr<vdb::process>& process,
 			std::string_view line) {
@@ -326,7 +376,7 @@ namespace {
 		if (is_prefix(command, "continue")) {
 			process->resume();
 			auto reason = process->wait_on_signal();
-			print_stop_reason(*process, reason);
+			handle_stop(*process, reason);
 		}
 		else if (is_prefix(command, "help")) {
 			print_help(args);
@@ -339,10 +389,13 @@ namespace {
 		}
 		else if (is_prefix(command, "step")) {
 			auto reason = process->step_instruction();
-			print_stop_reason(*process, reason);
+			handle_stop(*process, reason);
 		}
 		else if (is_prefix(command, "memory")) {
 			handle_memory_command(*process, args);
+		}
+		else if (is_prefix(command, "disassemble")) {
+			handle_disassemble_command(*process, args);
 		}
 		else {
 			std::cerr << "Unknown command\n";
