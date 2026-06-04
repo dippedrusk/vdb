@@ -11,6 +11,7 @@
 #include <vector>
 #include <libvdb/breakpoint_site.hpp>
 #include <libvdb/stop_point_collection.hpp>
+#include <libvdb/bit.hpp>
 
 namespace vdb {
 	enum class process_state {
@@ -68,6 +69,13 @@ namespace vdb {
 			breakpoint_site& create_breakpoint_site(virt_addr address);
 			stop_point_collection<breakpoint_site>& breakpoint_sites() { return breakpoint_sites_; }
 			const stop_point_collection<breakpoint_site>& breakpoint_sites() const { return breakpoint_sites_; }
+
+			std::vector<std::byte> read_memory(virt_addr address, std::size_t amount) const;
+			void write_memory(virt_addr address, span<const std::byte> data);
+			template <class T> T read_memory_as(virt_addr address) const {
+				auto data = read_memory(address, sizeof(T));
+				return from_bytes<T>(data.data());
+			}
 
 		private:
 			process(pid_t pid, bool terminate_on_end, bool is_attached)
