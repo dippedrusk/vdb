@@ -81,6 +81,7 @@ namespace {
 	memory		- Commands for operating on memory
 	register	- Commands for operating on registers
 	step		- Step over a single instruction
+	watchpoint	- Commands for operating on watchpoints
 )";
 		}
 		else if (is_prefix(args[1] ,"register")) {
@@ -112,6 +113,15 @@ namespace {
 			std::cerr << R"(Available commands:
 	-c <number of instructions>
 	-a <start address>
+)";
+		}
+		else if (is_prefix(args[1], "watchpoint")) {
+			std::cerr << R"(Available commands:
+	list
+	delete <id>
+	disable <id>
+	enable <id>
+	set <address> <write|read_write|execute> <size>
 )";
 		}
 		else {
@@ -285,6 +295,93 @@ namespace {
 		}
 	}
 
+	void handle_watchpoint_list(vdb::process& process, const std::vector<std::string>& args) {
+		auto stop_point_mode_to_string = [](auto mode) {
+			switch (mode) {
+				case vdb::stop_point_mode::execute: return "execute";
+				case vdb::stop_point_mode::write: return "write";
+				case vdb::stop_point_mode::read_write: return "read_write";
+				default: vdb::error::send("Invalid stop point mode");
+			}
+		};
+
+		if (process.watchpoints().empty()) {
+			fmt::print("No watchpoints set\n");
+		}
+		else {
+			fmt::print("Current watchpoints:\n");
+			process.watchpoints().for_each([&](auto& point) {
+					fmt::print("{}: address = {:#x}, mode = {}, size = {}, {}\n",
+							point.id(), point.address().addr(),
+							stop_point_mode_to_string(point.mode()), point.size(),
+							point.is_enabled() ? "enabled" : "disabled");
+					});
+		}
+	}
+
+	void handle_watchpoint_set(vdb::process& process, const std::vector<std::string>& args) {
+		if (args.size() != 5) {
+			print_help({ "help", "watchpoint"});
+			return;
+		}
+
+		auto address = vdb::to_integral<std::uint64_t>(args[2], 16);
+		auto mode_text = args[3];
+		auto size = vdb::to_integral<std::size_t>(args[4]);
+
+		if (!address or !size or !(mode_text == "write" or mode_text == "read_write" or mode_text == "execute")) {
+			print_help({ "help", "watchpoint"});
+			return;
+		}
+
+		vdb::stop_point_mode mode;
+		if (mode_text == "write") mode = vdb::stop_point_mode::write;
+		else if (mode_text == "read_write") mode = vdb::stop_point_mode::read_write;
+		else if (mode_text == "execute") mode = vdb::stop_point_mode::execute;
+
+		process.create_watchpoint(vdb::virt_addr{ *address }, mode, *size).enable();
+	}
+
+	void handle_watchpoint_command(vdb::process& process, const std::vector<std::string>& args) {
+		if (args.size() < 2) {
+			print_help({ "help", "watchpoint"});
+			return;
+		}
+
+		auto command = args[1];
+
+		if (is_prefix(command, "list")) {
+			handle_watchpoint_list(process, args);
+			return;
+		}
+
+		if (args.size() < 3) {
+			print_help({ "help", "watchpoint" });
+			return;
+		}
+
+		if (is_prefix(command, "set")) {
+			handle_watchpoint_set(process, args);
+			return;
+		}
+
+		auto id = vdb::to_integral<vdb::watchpoint::id_type>(args[2]);
+		if (!id) {
+			std::cerr << "Command expects watchpoint id";
+			return;
+		}
+
+		if (is_prefix(command, "enable")) {
+			process.watchpoints().get_by_id(*id).enable();
+		}
+		else if (is_prefix(command, "disable")) {
+			process.watchpoints().get_by_id(*id).disable();
+		}
+		else if (is_prefix(command, "delete")) {
+			process.watchpoints().remove_by_id(*id);
+		}
+	}
+
 	void handle_memory_read_command(vdb::process& process, const std::vector<std::string>& args) {
 		auto address = vdb::to_integral<std::uint64_t>(args[2], 16);
 		if (!address) vdb::error::send("Invalid address format");
@@ -404,6 +501,9 @@ namespace {
 		}
 		else if (is_prefix(command, "disassemble")) {
 			handle_disassemble_command(*process, args);
+		}
+		else if (is_prefix(command, "watchpoint")) {
+			handle_watchpoint_command(*process, args);
 		}
 		else {
 			std::cerr << "Unknown command\n";
