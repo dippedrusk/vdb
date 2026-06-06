@@ -354,3 +354,16 @@ void vdb::process::clear_hardware_stop_point(int index) {
 
 	get_registers().write_by_id(register_id::dr7, masked);
 }
+
+int vdb::process::set_watchpoint(watchpoint::id_type id, virt_addr address, stop_point_mode mode, std::size_t size) {
+	return set_hardware_stop_point(address, mode, size);
+}
+
+vdb::watchpoint& vdb::process::create_watchpoint(virt_addr address, stop_point_mode mode, std::size_t size) {
+	if (watchpoints_.contains_address(address)) {
+		error::send("Watchpoint already created at address " +
+				std::to_string(address.addr()));
+	}
+	return watchpoints_.push(
+			std::unique_ptr<watchpoint>(new watchpoint(*this, address, mode, size)));
+}

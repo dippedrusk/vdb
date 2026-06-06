@@ -11,6 +11,7 @@
 #include <vector>
 #include <libvdb/breakpoint_site.hpp>
 #include <libvdb/stop_point_collection.hpp>
+#include <libvdb/watchpoint.hpp>
 #include <libvdb/bit.hpp>
 
 namespace vdb {
@@ -70,6 +71,10 @@ namespace vdb {
 			stop_point_collection<breakpoint_site>& breakpoint_sites() { return breakpoint_sites_; }
 			const stop_point_collection<breakpoint_site>& breakpoint_sites() const { return breakpoint_sites_; }
 
+			watchpoint& create_watchpoint(virt_addr address, stop_point_mode mode, std::size_t size);
+			stop_point_collection<watchpoint>& watchpoints() { return watchpoints_; }
+			const stop_point_collection<watchpoint>& watchpoints() const { return watchpoints_; }
+
 			std::vector<std::byte> read_memory(virt_addr address, std::size_t amount) const;
 			std::vector<std::byte> read_memory_without_traps(virt_addr address, std::size_t amount) const;
 			void write_memory(virt_addr address, span<const std::byte> data);
@@ -80,6 +85,7 @@ namespace vdb {
 
 			int set_hardware_breakpoint(breakpoint_site::id_type id, virt_addr address);
 			void clear_hardware_stop_point(int index);
+			int set_watchpoint(watchpoint::id_type id, virt_addr address, stop_point_mode mode, std::size_t size);
 
 		private:
 			process(pid_t pid, bool terminate_on_end, bool is_attached)
@@ -97,6 +103,7 @@ namespace vdb {
 			void read_all_registers();
 			std::unique_ptr<registers> registers_;
 			stop_point_collection<breakpoint_site> breakpoint_sites_;
+			stop_point_collection<watchpoint> watchpoints_;
 	};
 }
 
