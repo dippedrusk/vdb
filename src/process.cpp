@@ -17,6 +17,34 @@ namespace {
 				reinterpret_cast<std::byte*>(message.data()), message.size());
 		exit(-1);
 	}
+
+	std::uint64_t encode_hardware_stop_point_mode(vdb::stop_point_mode mode) {
+		switch (mode) {
+			case vdb::stop_point_mode::write: return 0b01;
+			case vdb::stop_point_mode::read_write: return 0b11;
+			case vdb::stop_point_mode::execute: return 0b00;
+			default: vdb::error::send("Invalid stop point mode");
+		}
+	}
+
+	std::uint64_t encode_hardware_stop_point_size(std::size_t size) {
+		switch (size) {
+			case 1: return 0b00;
+			case 2: return 0b01;
+			case 4: return 0b10;
+			case 8: return 0b11;
+			default: vdb::error::send("Invalid stop point size");
+		}
+	}
+
+	int find_free_stop_point_register(std::uint64_t control_register) {
+		for (auto i = 0; i < 4; ++i) {
+			if ((control_register & (0b11 << (i*2))) == 0) {
+				return i;
+			}
+		}
+		vdb::error::send("No remaining hardware debug registers");
+	}
 }
 
 std::unique_ptr<vdb::process> vdb::process::launch(
@@ -199,13 +227,13 @@ void vdb::process::write_gprs(const user_regs_struct& gprs) {
 	}
 }
 
-vdb::breakpoint_site& vdb::process::create_breakpoint_site(virt_addr address) {
+vdb::breakpoint_site& vdb::process::create_breakpoint_site(virt_addr address, bool hardware, bool internal) {
 	if (breakpoint_sites_.contains_address(address)) {
 		error::send("Breakpoint site already created at address " +
 				std::to_string(address.addr()));
 	}
 	return breakpoint_sites_.push(
-			std::unique_ptr<breakpoint_site>(new breakpoint_site(*this, address)));
+			std::unique_ptr<breakpoint_site>(new breakpoint_site(*this, address, hardware, internal)));
 }
 
 vdb::stop_reason vdb::process::step_instruction() {
@@ -255,7 +283,7 @@ std::vector<std::byte> vdb::process::read_memory_without_traps(virt_addr address
 	auto sites = breakpoint_sites_.get_in_region(address, address+amount);
 
 	for (auto site : sites) {
-		if (!site->is_enabled()) continue;
+		if (!site->is_enabled() or site->is_hardware()) continue;
 		auto offset = site->address() - address.addr();
 		memory[offset.addr()] = site->saved_data_;
 	}
@@ -283,4 +311,46 @@ void vdb::process::write_memory(virt_addr address, span<const std::byte> data) {
 		}
 		written += 8;
 	}
+}
+
+int vdb::process::set_hardware_breakpoint(breakpoint_site::id_type id, virt_addr address) {
+	return set_hardware_stop_point(address, stop_point_mode::execute, 1);
+}
+
+int vdb::process::set_hardware_stop_point(virt_addr address, stop_point_mode mode, std::size_t size) {
+	auto& regs = get_registers();
+	auto control = regs.read_by_id_as<std::uint64_t>(register_id::dr7);
+
+	int free_space = find_free_stop_point_register(control);
+
+	auto id = static_cast<int>(register_id::dr0) + free_space;
+	regs.write_by_id(static_cast<register_id>(id), address.addr());
+
+	auto mode_flag = encode_hardware_stop_point_mode(mode);
+	auto size_flag = encode_hardware_stop_point_size(size);
+
+	auto enable_bit = (1 << (free_space * 2));
+	auto mode_bits = (mode_flag << (free_space * 4 + 16));
+	auto size_bits = (size_flag << (free_space * 4 + 18));
+
+	auto clear_mask = (0b11 << (free_space * 2)) | (0b1111 << (free_space * 4 + 16));
+	auto masked = control & ~clear_mask;
+
+	masked |= enable_bit | mode_bits | size_bits;
+
+	regs.write_by_id(register_id::dr7, masked);
+
+	return free_space;
+}
+
+void vdb::process::clear_hardware_stop_point(int index) {
+	auto id = static_cast<int>(register_id::dr0) + index;
+	get_registers().write_by_id(static_cast<register_id>(id), 0);
+
+	auto control = get_registers().read_by_id_as<std::uint64_t>(register_id::dr7);
+
+	auto clear_mask = (0b11 << (index * 2)) | (0b1111 << (index * 4 + 16));
+	auto masked = control & ~clear_mask;
+
+	get_registers().write_by_id(register_id::dr7, masked);
 }

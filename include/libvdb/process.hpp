@@ -66,7 +66,7 @@ namespace vdb {
 				get_registers().write_by_id(register_id::rip, address.addr());
 			}
 
-			breakpoint_site& create_breakpoint_site(virt_addr address);
+			breakpoint_site& create_breakpoint_site(virt_addr address, bool hardware = false, bool internal = false);
 			stop_point_collection<breakpoint_site>& breakpoint_sites() { return breakpoint_sites_; }
 			const stop_point_collection<breakpoint_site>& breakpoint_sites() const { return breakpoint_sites_; }
 
@@ -78,6 +78,9 @@ namespace vdb {
 				return from_bytes<T>(data.data());
 			}
 
+			int set_hardware_breakpoint(breakpoint_site::id_type id, virt_addr address);
+			void clear_hardware_stop_point(int index);
+
 		private:
 			process(pid_t pid, bool terminate_on_end, bool is_attached)
 				: pid_(pid),
@@ -85,6 +88,8 @@ namespace vdb {
 				  is_attached_(is_attached),
 				  registers_(new registers(*this))
 			{}
+			int set_hardware_stop_point(virt_addr address, stop_point_mode mode, std::size_t size);
+
 			pid_t pid_ = 0;
 			bool terminate_on_end_ = true;
 			process_state state_ = process_state::stopped;

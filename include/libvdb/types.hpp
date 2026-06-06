@@ -70,6 +70,10 @@ namespace vdb {
 			T* data_ = nullptr;
 			std::size_t size_ = 0;
 	};
+
+	enum class stop_point_mode {
+		write, read_write, execute
+	};
 }
 
 #endif

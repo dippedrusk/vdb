@@ -98,6 +98,7 @@ namespace {
 	disable <id>
 	enable <id>
 	set <address>
+	set <address> -h
 )";
 		}
 		else if (is_prefix(args[1], "memory")) {
@@ -236,6 +237,7 @@ namespace {
 			else {
 				fmt::print("Current breakpoints:\n");
 				process.breakpoint_sites().for_each([](auto& site) {
+						if (site.is_internal()) return;
 						fmt::print("{}: address = {:#x}, {}\n", site.id(), site.address().addr(),
 								site.is_enabled() ? "enabled" : "disabled");
 						});
@@ -256,7 +258,13 @@ namespace {
 				return;
 			}
 
-			process.create_breakpoint_site(vdb::virt_addr{ *address }).enable();
+			bool hardware = false;
+			if (args.size() == 4) {
+				if (args[3] == "-h") hardware = true;
+				else vdb::error::send("Invalid breakpoint command argument");
+			}
+
+			process.create_breakpoint_site(vdb::virt_addr{ *address }, hardware).enable();
 			return;
 		}
 
