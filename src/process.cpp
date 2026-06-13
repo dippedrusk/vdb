@@ -61,6 +61,10 @@ std::unique_ptr<vdb::process> vdb::process::launch(
 	}
 
 	if (pid == 0) {
+		if (setpgid(0, 0) < 0) {
+			exit_with_perror(channel, "Could not set pgid");
+		}
+
 		// disable address randomization for the child process
 		personality(ADDR_NO_RANDOMIZE);
 

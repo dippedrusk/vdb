@@ -15,8 +15,15 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 #include <libvdb/parse.hpp>
+#include <csignal>
 
 namespace {
+	vdb::process* g_vdb_process = nullptr;
+
+	void handle_sigint(int) {
+		kill(g_vdb_process->pid(), SIGSTOP);
+	}
+
 	std::unique_ptr<vdb::process> attach(int argc, const char** argv) {
 		pid_t pid = 0;
 		// PID
@@ -547,6 +554,8 @@ int main(int argc, const char** argv) {
 
 	try {
 		auto process = attach(argc, argv);
+		g_vdb_process = process.get();
+		signal(SIGINT, handle_sigint);
 		main_loop(process);
 	}
 	catch (const vdb::error& err) {
