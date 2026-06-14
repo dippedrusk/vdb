@@ -1,6 +1,7 @@
 #include <libvdb/process.hpp>
 #include <libvdb/error.hpp>
 #include <libvdb/disassembler.hpp>
+#include <libvdb/syscalls.hpp>
 #include <iostream>
 #include <unistd.h>
 #include <string_view>
@@ -85,6 +86,21 @@ namespace {
 		if (reason.trap_reason == vdb::trap_type::single_step) {
 			return " (single step)";
 		}
+		if (reason.trap_reason == vdb::trap_type::syscall) {
+			const auto& info = *reason.syscall_info;
+			std::string message = " ";
+			if (info.entry) {
+				message += "(syscall entry)\n";
+				message += fmt::format("syscall: {}({:#x})",
+						vdb::syscall_id_to_name(info.id),
+						fmt::join(info.args, ","));
+			}
+			else {
+				message += "(syscall exit)\n";
+				message += fmt::format("syscall returned: {:#x}", info.ret);
+			}
+			return message;
+		}
 
 		return "";
 	}
@@ -118,6 +134,7 @@ namespace {
 		if (args.size() == 1) {
 			std::cerr << R"(Available commands:
 	breakpoint	- Commands for operating on breakpoints
+	catchpoint	- Commands for operating on catchpoints
 	continue	- Resume the process
 	disassemble	- Disassemble machine code to assembly
 	memory		- Commands for operating on memory
@@ -164,6 +181,13 @@ namespace {
 	disable <id>
 	enable <id>
 	set <address> <write|read_write|execute> <size>
+)";
+		}
+		else if (is_prefix(args[1], "catchpoint")) {
+			std::cerr << R"(Available commands:
+	syscall
+	syscall none
+	syscall <list of syscall IDs or names>
 )";
 		}
 		else {
@@ -514,6 +538,38 @@ namespace {
 		print_disassembly(process, address, n_instructions);
 	}
 
+	void handle_syscall_catchpoint_command(vdb::process& process, const std::vector<std::string>& args) {
+		vdb::syscall_catch_policy policy = vdb::syscall_catch_policy::catch_all();
+
+		if (args.size() == 3 and args[2] == "none") {
+			policy = vdb::syscall_catch_policy::catch_none();
+		}
+		else if (args.size() >= 3) {
+			auto syscalls = split(args[2], ',');
+			std::vector<int> to_catch;
+			std::transform(begin(syscalls), end(syscalls), std::back_inserter(to_catch),
+					[](auto& syscall) {
+						return isdigit(syscall[0]) ?
+							vdb::to_integral<int>(syscall).value() :
+							vdb::syscall_name_to_id(syscall);
+					});
+			policy = vdb::syscall_catch_policy::catch_some(std::move(to_catch));
+		}
+
+		process.set_syscall_catch_policy(std::move(policy));
+	}
+
+	void handle_catchpoint_command(vdb::process& process, const std::vector<std::string>& args) {
+		if (args.size() < 2) {
+			print_help({ "help", "catchpoint" });
+			return;
+		}
+
+		if (is_prefix(args[1], "syscall")) {
+			handle_syscall_catchpoint_command(process, args);
+		}
+	}
+
 	void handle_command(
 			std::unique_ptr<vdb::process>& process,
 			std::string_view line) {
@@ -546,6 +602,9 @@ namespace {
 		}
 		else if (is_prefix(command, "watchpoint")) {
 			handle_watchpoint_command(*process, args);
+		}
+		else if (is_prefix(command, "catchpoint")) {
+			handle_catchpoint_command(*process, args);
 		}
 		else {
 			std::cerr << "Unknown command\n";

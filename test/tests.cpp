@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <libvdb/syscalls.hpp>
 #include <libvdb/process.hpp>
 #include <libvdb/error.hpp>
 #include <libvdb/pipe.hpp>
@@ -8,6 +9,7 @@
 #include <sys/types.h>
 #include <signal.h>
 #include <fstream>
+#include <fcntl.h>
 
 using namespace vdb;
 
@@ -434,4 +436,42 @@ TEST_CASE("Watchpoint detects read", "[watchpoint]") {
 	proc->wait_on_signal();
 
 	REQUIRE(to_string_view(channel.read()) == "Putting pineapple on pizza...\n");
+}
+
+TEST_CASE("Syscall mapping", "[syscall]") {
+	REQUIRE(vdb::syscall_id_to_name(0) == "read");
+	REQUIRE(vdb::syscall_name_to_id("read") == 0);
+	REQUIRE(vdb::syscall_id_to_name(62) == "kill");
+	REQUIRE(vdb::syscall_name_to_id("kill") == 62);
+	REQUIRE(vdb::syscall_id_to_name(461) == "lsm_list_modules");
+	REQUIRE(vdb::syscall_name_to_id("lsm_list_modules") == 461);
+}
+
+TEST_CASE("Syscall catchpoints", "[catchpoint]") {
+	auto dev_null = open("/dev/null", O_WRONLY);
+	auto proc = process::launch("targets/anti_debugger", true, dev_null);
+
+	auto write_syscall = vdb::syscall_name_to_id("write");
+	auto policy = vdb::syscall_catch_policy::catch_some({ write_syscall });
+	proc->set_syscall_catch_policy(policy);
+
+	proc->resume();
+	auto reason = proc->wait_on_signal();
+
+	REQUIRE(reason.reason == vdb::process_state::stopped);
+	REQUIRE(reason.info == SIGTRAP);
+	REQUIRE(reason.trap_reason == vdb::trap_type::syscall);
+	REQUIRE(reason.syscall_info->id == write_syscall);
+	REQUIRE(reason.syscall_info->entry == true);
+
+	proc->resume();
+	reason = proc->wait_on_signal();
+
+	REQUIRE(reason.reason == vdb::process_state::stopped);
+	REQUIRE(reason.info == SIGTRAP);
+	REQUIRE(reason.trap_reason == vdb::trap_type::syscall);
+	REQUIRE(reason.syscall_info->id == write_syscall);
+	REQUIRE(reason.syscall_info->entry == false);
+
+	close(dev_null);
 }
