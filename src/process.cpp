@@ -45,6 +45,12 @@ namespace {
 		}
 		vdb::error::send("No remaining hardware debug registers");
 	}
+
+	void set_ptrace_options(pid_t pid) {
+		if (ptrace(PTRACE_SETOPTIONS, pid, nullptr, PTRACE_O_TRACESYSGOOD) < 0) {
+			vdb::error::send_errno("Failed to set TRACESYSGOOD option");
+		}
+	}
 }
 
 std::unique_ptr<vdb::process> vdb::process::launch(
@@ -97,6 +103,7 @@ std::unique_ptr<vdb::process> vdb::process::launch(
 	std::unique_ptr<process> proc (new process(pid, /*terminate_on_end=*/true, debug));
 	if (debug) {
 		proc->wait_on_signal();
+		set_ptrace_options(proc->pid());
 	}
 
 	return proc;
@@ -114,6 +121,7 @@ std::unique_ptr<vdb::process> vdb::process::attach(
 
 	std::unique_ptr<process> proc (new process(pid, /*terminate_on_end=*/false, /*attached=*/true));
 	proc->wait_on_signal();
+	set_ptrace_options(proc->pid());
 
 	return proc;
 }
@@ -152,7 +160,8 @@ void vdb::process::resume() {
 		bp.enable();
 	}
 
-	if (ptrace(PTRACE_CONT, pid_, nullptr, nullptr) < 0) {
+	auto request = syscall_catch_policy_.get_mode() == syscall_catch_policy::mode::none ? PTRACE_CONT : PTRACE_SYSCALL;
+	if (ptrace(request, pid_, nullptr, nullptr) < 0) {
 		error::send_errno("Could not resume");
 	}
 	state_ = process_state::running;
@@ -197,6 +206,9 @@ vdb::stop_reason vdb::process::wait_on_signal() {
 				if (id.index() == 1) {
 					watchpoints_.get_by_id(std::get<1>(id)).update_data();
 				}
+			}
+			else if (reason.trap_reason == trap_type::syscall) {
+				reason = maybe_resume_from_syscall(reason);
 			}
 		}
 	}
@@ -389,6 +401,39 @@ void vdb::process::augment_stop_reason(vdb::stop_reason& reason) {
 		error::send_errno("Failed to get signal info");
 	}
 
+	if (reason.info == (SIGTRAP | 0x80)) {
+		auto& sys_info = reason.syscall_info.emplace();
+		auto& regs = get_registers();
+
+		if (expecting_syscall_exit_) {
+			sys_info.entry = false;
+			sys_info.id = regs.read_by_id_as<std::uint64_t>(register_id::orig_rax);
+			sys_info.ret = regs.read_by_id_as<std::uint64_t>(register_id::rax);
+			expecting_syscall_exit_ = false;
+		}
+		else {
+			sys_info.entry = true;
+			sys_info.id = regs.read_by_id_as<std::uint64_t>(register_id::orig_rax);
+
+			std::array<register_id, 6> arg_regs = {
+				register_id::rdi, register_id::rsi, register_id::rdx,
+				register_id::r10, register_id::r8, register_id::r9
+			};
+
+			for (auto i = 0; i < 6; ++i) {
+				sys_info.args[i] = regs.read_by_id_as<std::uint64_t>(arg_regs[i]);
+			}
+
+			expecting_syscall_exit_ = true;
+		}
+
+		reason.info = SIGTRAP;
+		reason.trap_reason = trap_type::syscall;
+		return;
+	}
+
+	expecting_syscall_exit_ = false;
+
 	reason.trap_reason = trap_type::unknown;
 	if (reason.info == SIGTRAP) {
 		switch (info.si_code) {
@@ -422,4 +467,18 @@ std::variant<vdb::breakpoint_site::id_type, vdb::watchpoint::id_type> vdb::proce
 		auto watch_id = watchpoints_.get_by_address(addr).id();
 		return ret{ std::in_place_index<1>, watch_id };
 	}
+}
+
+vdb::stop_reason vdb::process::maybe_resume_from_syscall(const stop_reason& reason) {
+	if (syscall_catch_policy_.get_mode() == syscall_catch_policy::mode::some) {
+		auto& to_catch = syscall_catch_policy_.get_to_catch();
+		auto found = std::find(begin(to_catch), end(to_catch), reason.syscall_info->id);
+
+		if (found == end(to_catch)) {
+			resume();
+			return wait_on_signal();
+		}
+	}
+
+	return reason;
 }
