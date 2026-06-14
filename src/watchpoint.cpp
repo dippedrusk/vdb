@@ -1,6 +1,7 @@
 #include <libvdb/watchpoint.hpp>
 #include <libvdb/process.hpp>
 #include <libvdb/error.hpp>
+#include <utility>
 
 namespace {
 	auto get_next_id() {
@@ -16,6 +17,7 @@ vdb::watchpoint::watchpoint(process& proc, virt_addr address, stop_point_mode mo
 	}
 
 	id_ = get_next_id();
+	update_data();
 }
 
 void vdb::watchpoint::enable() {
@@ -30,4 +32,11 @@ void vdb::watchpoint::disable() {
 
 	process_->clear_hardware_stop_point(hardware_register_index_);
 	is_enabled_ = false;
+}
+
+void vdb::watchpoint::update_data() {
+	std::uint64_t new_data = 0;
+	auto read = process_->read_memory(address_, size_);
+	memcpy(&new_data, read.data(), size_);
+	previous_data_ = std::exchange(data_, new_data);
 }

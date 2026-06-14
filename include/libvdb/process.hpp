@@ -22,11 +22,20 @@ namespace vdb {
 		terminated
 	};
 
+	enum class trap_type {
+		single_step,
+		software_break,
+		hardware_break,
+		unknown
+	};
+
 	struct stop_reason {
 		stop_reason(int wait_status);
 
 		process_state reason;
 		std::uint8_t info;
+
+		std::optional<trap_type> trap_reason;
 	};
 
 	class process {
@@ -86,6 +95,7 @@ namespace vdb {
 			int set_hardware_breakpoint(breakpoint_site::id_type id, virt_addr address);
 			void clear_hardware_stop_point(int index);
 			int set_watchpoint(watchpoint::id_type id, virt_addr address, stop_point_mode mode, std::size_t size);
+			std::variant<breakpoint_site::id_type, watchpoint::id_type> get_current_hardware_stop_point() const;
 
 		private:
 			process(pid_t pid, bool terminate_on_end, bool is_attached)
@@ -95,6 +105,7 @@ namespace vdb {
 				  registers_(new registers(*this))
 			{}
 			int set_hardware_stop_point(virt_addr address, stop_point_mode mode, std::size_t size);
+			void augment_stop_reason(stop_reason& reason);
 
 			pid_t pid_ = 0;
 			bool terminate_on_end_ = true;

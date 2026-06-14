@@ -57,6 +57,38 @@ namespace {
 		return std::equal(str.begin(), str.end(), of.begin()); // TODO: contemplate this
 	}
 
+	std::string get_sigtrap_info(const vdb::process& process, vdb::stop_reason reason) {
+		if (reason.trap_reason == vdb::trap_type::software_break) {
+			auto& site = process.breakpoint_sites().get_by_address(process.get_pc());
+			return fmt::format(" (breakpoint {})", site.id());
+		}
+		if (reason.trap_reason == vdb::trap_type::hardware_break) {
+			auto id = process.get_current_hardware_stop_point();
+
+			if (id.index() == 0) {
+				return fmt::format(" (breakpoint {})", std::get<0>(id));
+			}
+
+			std::string message;
+			auto& point = process.watchpoints().get_by_id(std::get<1>(id));
+			message += fmt::format(" (watchpoint {})", point.id());
+
+			if (point.data() == point.previous_data()) {
+				message += fmt::format("\nValue: {:#x}", point.data());
+			}
+			else {
+				message += fmt::format("\nOld value: {:#x}\nNew value: {:#x}",
+						point.previous_data(), point.data());
+			}
+			return message;
+		}
+		if (reason.trap_reason == vdb::trap_type::single_step) {
+			return " (single step)";
+		}
+
+		return "";
+	}
+
 	void print_stop_reason(
 			const vdb::process& process, vdb::stop_reason reason) {
 		std::string message;
@@ -73,6 +105,9 @@ namespace {
 				message = fmt::format("stopped with signal {} at {:#x}",
 						sigabbrev_np(reason.info),
 						process.get_pc().addr());
+				if (reason.info == SIGTRAP) {
+					message += get_sigtrap_info(process, reason);
+				}
 				break;
 		}
 

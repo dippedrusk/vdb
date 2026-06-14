@@ -184,9 +184,20 @@ vdb::stop_reason vdb::process::wait_on_signal() {
 
 	if (is_attached_ and state_ == process_state::stopped) {
 		read_all_registers();
+		augment_stop_reason(reason);
+
 		auto instr_begin = get_pc() - 1;
-		if (reason.info == SIGTRAP and breakpoint_sites_.enabled_stop_point_at_address(instr_begin)) {
-			set_pc(instr_begin);
+		if (reason.info == SIGTRAP) {
+			if (reason.trap_reason == trap_type::software_break and
+					breakpoint_sites_.enabled_stop_point_at_address(instr_begin)) {
+				set_pc(instr_begin);
+			}
+			else if (reason.trap_reason == trap_type::hardware_break) {
+				auto id = get_current_hardware_stop_point();
+				if (id.index() == 1) {
+					watchpoints_.get_by_id(std::get<1>(id)).update_data();
+				}
+			}
 		}
 	}
 
@@ -370,4 +381,45 @@ vdb::watchpoint& vdb::process::create_watchpoint(virt_addr address, stop_point_m
 	}
 	return watchpoints_.push(
 			std::unique_ptr<watchpoint>(new watchpoint(*this, address, mode, size)));
+}
+
+void vdb::process::augment_stop_reason(vdb::stop_reason& reason) {
+	siginfo_t info;
+	if (ptrace(PTRACE_GETSIGINFO, pid_, nullptr, &info) < 0) {
+		error::send_errno("Failed to get signal info");
+	}
+
+	reason.trap_reason = trap_type::unknown;
+	if (reason.info == SIGTRAP) {
+		switch (info.si_code) {
+			case TRAP_TRACE:
+				reason.trap_reason = trap_type::single_step;
+				break;
+			case SI_KERNEL:
+				reason.trap_reason = trap_type::software_break;
+				break;
+			case TRAP_HWBKPT:
+				reason.trap_reason = trap_type::hardware_break;
+				break;
+		}
+	}
+}
+
+std::variant<vdb::breakpoint_site::id_type, vdb::watchpoint::id_type> vdb::process::get_current_hardware_stop_point() const {
+	auto& regs = get_registers();
+	auto status = regs.read_by_id_as<std::uint64_t>(register_id::dr6);
+	auto index = __builtin_ctzll(status);
+
+	auto id = static_cast<int>(register_id::dr0) + index;
+	auto addr = virt_addr(regs.read_by_id_as<std::uint64_t>(static_cast<register_id>(id)));
+
+	using ret = std::variant<vdb::breakpoint_site::id_type, vdb::watchpoint::id_type>;
+	if (breakpoint_sites_.contains_address(addr)) {
+		auto site_id = breakpoint_sites_.get_by_address(addr).id();
+		return ret{ std::in_place_index<0>, site_id };
+	}
+	else {
+		auto watch_id = watchpoints_.get_by_address(addr).id();
+		return ret{ std::in_place_index<1>, watch_id };
+	}
 }
