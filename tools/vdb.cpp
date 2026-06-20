@@ -2,6 +2,7 @@
 #include <libvdb/error.hpp>
 #include <libvdb/disassembler.hpp>
 #include <libvdb/syscalls.hpp>
+#include <libvdb/target.hpp>
 #include <iostream>
 #include <unistd.h>
 #include <string_view>
@@ -25,19 +26,19 @@ namespace {
 		kill(g_vdb_process->pid(), SIGSTOP);
 	}
 
-	std::unique_ptr<vdb::process> attach(int argc, const char** argv) {
+	std::unique_ptr<vdb::target> attach(int argc, const char** argv) {
 		pid_t pid = 0;
 		// PID
 		if (argc == 3 && argv[1] == std::string_view("-p")) {
 			pid = std::atoi(argv[2]);
-			return vdb::process::attach(pid);
+			return vdb::target::attach(pid);
 		}
 		// Program name
 		else {
 			const char* program_path = argv[1];
-			auto proc = vdb::process::launch(program_path);
-			fmt::print("Launched process with PID {}\n", proc->pid());
-			return proc;
+			auto target = vdb::target::launch(program_path);
+			fmt::print("Launched process with PID {}\n", target->get_process().pid());
+			return target;
 		}
 	}
 
@@ -105,8 +106,26 @@ namespace {
 		return "";
 	}
 
+	std::string get_signal_stop_reason(const vdb::target& target, vdb::stop_reason reason) {
+		auto& process = target.get_process();
+		std::string message = fmt::format("stopped with signal {} at {:#x}",
+				sigabbrev_np(reason.info),
+				process.get_pc().addr());
+
+		auto func = target.get_elf().get_symbol_containing_address(process.get_pc());
+		if (func and ELF64_ST_TYPE(func.value()->st_info) == STT_FUNC) {
+			message += fmt::format(" ({})", target.get_elf().get_string(func.value()->st_name));
+		}
+
+		if (reason.info == SIGTRAP) {
+			message += get_sigtrap_info(process, reason);
+		}
+
+		return message;
+	}
+
 	void print_stop_reason(
-			const vdb::process& process, vdb::stop_reason reason) {
+			const vdb::target& target, vdb::stop_reason reason) {
 		std::string message;
 		switch (reason.reason) {
 			case vdb::process_state::exited:
@@ -118,16 +137,11 @@ namespace {
 						sigabbrev_np(reason.info));
 				break;
 			case vdb::process_state::stopped:
-				message = fmt::format("stopped with signal {} at {:#x}",
-						sigabbrev_np(reason.info),
-						process.get_pc().addr());
-				if (reason.info == SIGTRAP) {
-					message += get_sigtrap_info(process, reason);
-				}
+				message = get_signal_stop_reason(target, reason);
 				break;
 		}
 
-		fmt::print("Process {} {}\n", process.pid(), message);
+		fmt::print("Process {} {}\n", target.get_process().pid(), message);
 	}
 
 	void print_help(const std::vector<std::string>& args) {
@@ -504,10 +518,10 @@ namespace {
 		}
 	}
 
-	void handle_stop(vdb::process& process, vdb::stop_reason reason) {
-		print_stop_reason(process, reason);
+	void handle_stop(vdb::target& target, vdb::stop_reason reason) {
+		print_stop_reason(target, reason);
 		if (reason.reason == vdb::process_state::stopped) {
-			print_disassembly(process, process.get_pc(), 5);
+			print_disassembly(target.get_process(), target.get_process().get_pc(), 5);
 		}
 	}
 
@@ -571,15 +585,16 @@ namespace {
 	}
 
 	void handle_command(
-			std::unique_ptr<vdb::process>& process,
+			std::unique_ptr<vdb::target>& target,
 			std::string_view line) {
 		auto args = split(line, ' ');
 		auto command = args[0];
+		auto process = &target->get_process();
 
 		if (is_prefix(command, "continue")) {
 			process->resume();
 			auto reason = process->wait_on_signal();
-			handle_stop(*process, reason);
+			handle_stop(*target, reason);
 		}
 		else if (is_prefix(command, "help")) {
 			print_help(args);
@@ -592,7 +607,7 @@ namespace {
 		}
 		else if (is_prefix(command, "step")) {
 			auto reason = process->step_instruction();
-			handle_stop(*process, reason);
+			handle_stop(*target, reason);
 		}
 		else if (is_prefix(command, "memory")) {
 			handle_memory_command(*process, args);
@@ -611,7 +626,7 @@ namespace {
 		}
 	}
 
-	void main_loop(std::unique_ptr<vdb::process>& process) {
+	void main_loop(std::unique_ptr<vdb::target>& target) {
 		char* line = nullptr;
 		while ((line = readline("vdb> ")) != nullptr) {
 			std::string line_str;
@@ -630,7 +645,7 @@ namespace {
 
 			if (!line_str.empty()) {
 				try {
-					handle_command(process, line_str);
+					handle_command(target, line_str);
 				}
 				catch (const vdb::error& err) {
 					std::cout << err.what() << '\n';
@@ -647,10 +662,10 @@ int main(int argc, const char** argv) {
 	}
 
 	try {
-		auto process = attach(argc, argv);
-		g_vdb_process = process.get();
+		auto target = attach(argc, argv);
+		g_vdb_process = &target->get_process();
 		signal(SIGINT, handle_sigint);
-		main_loop(process);
+		main_loop(target);
 	}
 	catch (const vdb::error& err) {
 		std::cout << err.what() << '\n';
