@@ -30,6 +30,7 @@ vdb::elf::elf(const std::filesystem::path& path) {
 
 	std::copy(data_, data_ + sizeof(header_), as_bytes(header_));
 	parse_section_headers();
+	build_section_map();
 }
 
 vdb::elf::~elf() {
@@ -47,4 +48,38 @@ void vdb::elf::parse_section_headers() {
 	std::copy(data_ + header_.e_shoff,
 			data_ + header_.e_shoff + sizeof(Elf64_Shdr) * n_headers,
 			reinterpret_cast<std::byte*>(section_headers_.data()));
+}
+
+std::string_view vdb::elf::get_section_name(std::size_t index) const {
+	auto& section = section_headers_[header_.e_shstrndx];
+	return { reinterpret_cast<char*>(data_) + section.sh_offset + index };
+}
+
+void vdb::elf::build_section_map() {
+	for (auto& section : section_headers_) {
+		section_map_[get_section_name(section.sh_name)] = &section;
+	}
+}
+
+std::optional<const Elf64_Shdr*> vdb::elf::get_section(std::string_view name) const {
+	if (section_map_.count(name) == 0) {
+		return std::nullopt;
+	}
+	return section_map_.at(name);
+}
+
+vdb::span<const std::byte> vdb::elf::get_section_contents(std::string_view name) const {
+	if (auto sect = get_section(name); sect) {
+		return { data_ + sect.value()->sh_offset, sect.value()->sh_size };
+	}
+	return { nullptr, std::size_t(0) };
+}
+
+std::string_view vdb::elf::get_string(std::size_t index) const {
+	auto opt_strtab = get_section(".strtab");
+	if (!opt_strtab) {
+		opt_strtab = get_section(".dynstr");
+		if (!opt_strtab) return "";
+	}
+	return { reinterpret_cast<char*>(data_) + opt_strtab.value()->sh_offset + index };
 }
