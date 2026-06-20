@@ -5,10 +5,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <cassert>
 
 namespace vdb {
 	using byte64 = std::array<std::byte, 8>;
 	using byte128 = std::array<std::byte, 16>;
+
+	class file_addr;
+	class elf;
 
 	class virt_addr {
 		public:
@@ -51,6 +55,7 @@ namespace vdb {
 			bool operator>=(const virt_addr& other) const {
 				return addr_ >= other.addr_;
 			}
+			file_addr to_file_addr(const elf& obj) const;
 		private:
 			std::uint64_t addr_ = 0;
 	};
@@ -74,6 +79,75 @@ namespace vdb {
 
 	enum class stop_point_mode {
 		write, read_write, execute
+	};
+
+	class file_addr {
+		public:
+			file_addr() = default;
+			file_addr(const elf& obj, std::uint64_t addr) : elf_(&obj), addr_(addr) {}
+
+			file_addr operator+(std::int64_t offset) const {
+				return file_addr(*elf_, addr_ + offset);
+			}
+			file_addr operator-(std::int64_t offset) const {
+				return file_addr(*elf_, addr_ - offset);
+			}
+			file_addr& operator+=(std::int64_t offset) {
+				addr_ += offset;
+				return *this;
+			}
+			file_addr& operator-=(std::int64_t offset) {
+				addr_ -= offset;
+				return *this;
+			}
+			bool operator==(const file_addr& other) const {
+				return elf_ == other.elf_ and addr_ == other.addr_;
+			}
+			bool operator!=(const file_addr& other) const {
+				return elf_ != other.elf_ or addr_ != other.addr_;
+			}
+			bool operator<(const file_addr& other) const {
+				assert(elf_ == other.elf_);
+				return addr_ < other.addr_;
+			}
+			bool operator<=(const file_addr& other) const {
+				assert(elf_ == other.elf_);
+				return addr_ <= other.addr_;
+			}
+			bool operator>(const file_addr& other) const {
+				assert(elf_ == other.elf_);
+				return addr_ > other.addr_;
+			}
+			bool operator>=(const file_addr& other) const {
+				assert(elf_ == other.elf_);
+				return addr_ >= other.addr_;
+			}
+
+			std::uint64_t addr() const {
+				return addr_;
+			}
+			const elf* elf_file() const {
+				return elf_;
+			}
+
+			virt_addr to_virt_addr() const;
+
+		private:
+			const elf* elf_ = nullptr;
+			std::uint64_t addr_ = 0;
+	};
+
+	class file_offset {
+		public:
+			file_offset() = default;
+			file_offset(const elf& obj, std::uint64_t off) : elf_(&obj), off_(off) {}
+
+			std::uint64_t off() const { return off_; }
+			const elf* elf_file() const { return elf_; }
+
+		private:
+			const elf* elf_ = nullptr;
+			std::uint64_t off_ = 0;
 	};
 }
 
