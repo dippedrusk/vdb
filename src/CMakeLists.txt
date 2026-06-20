@@ -1,4 +1,4 @@
-add_library(libvdb process.cpp pipe.cpp registers.cpp breakpoint_site.cpp disassembler.cpp watchpoint.cpp syscalls.cpp elf.cpp types.cpp)
+add_library(libvdb process.cpp pipe.cpp registers.cpp breakpoint_site.cpp disassembler.cpp watchpoint.cpp syscalls.cpp elf.cpp types.cpp target.cpp)
 add_library(vdb::libvdb ALIAS libvdb)
 target_link_libraries(libvdb PRIVATE Zydis::Zydis)
 
