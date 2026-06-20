@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <vector>
 #include <libvdb/elf.hpp>
 #include <libvdb/error.hpp>
 #include <libvdb/bit.hpp>
@@ -28,9 +29,22 @@ vdb::elf::elf(const std::filesystem::path& path) {
 	data_ = reinterpret_cast<std::byte*>(ret);
 
 	std::copy(data_, data_ + sizeof(header_), as_bytes(header_));
+	parse_section_headers();
 }
 
 vdb::elf::~elf() {
 	munmap(data_, file_size_);
 	close(fd_);
+}
+
+void vdb::elf::parse_section_headers() {
+	auto n_headers = header_.e_shnum;
+	if (n_headers == 0 and header_.e_shentsize != 0) {
+		n_headers = from_bytes<Elf64_Shdr>(data_ + header_.e_shoff).sh_size;
+	}
+
+	section_headers_.resize(n_headers);
+	std::copy(data_ + header_.e_shoff,
+			data_ + header_.e_shoff + sizeof(Elf64_Shdr) * n_headers,
+			reinterpret_cast<std::byte*>(section_headers_.data()));
 }
